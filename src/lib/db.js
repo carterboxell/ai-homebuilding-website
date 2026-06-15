@@ -3,14 +3,21 @@ import { spawnSync } from 'child_process'
 function runQuery(sql) {
   const result = spawnSync(
     'sqlcmd',
-    ['-S', 'localhost\\SQLEXPRESS', '-d', 'WinStarHomes', '-No', '-C', '-h', '-1', '-W', '-Q', sql],
+    ['-S', 'localhost\\SQLEXPRESS', '-d', 'WinStarHomes', '-No', '-C', '-h', '-1', '-Q', sql],
     { encoding: 'utf8', timeout: 8000, windowsHide: true }
   )
   if (result.error || result.status !== 0) return ''
-  return (result.stdout || '').replace(/\(\d+ rows? affected\)/gi, '').trim()
+  return (result.stdout || '')
+    .replace(/\(\d+ rows? affected\)/gi, '')
+    .replace(/<[^>]+>/g, '')       // strip HTML tags
+    .split('\n')
+    .map(line => line.trimEnd())   // remove padding spaces per line
+    .filter(line => line.trim())   // drop blank lines
+    .join('\n')
+    .trim()
 }
 
-function extractKeywords(question) {
+function extractKeywords(text) {
   const stopWords = new Set([
     'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been',
     'what', 'how', 'when', 'where', 'which', 'who', 'why', 'do', 'does',
@@ -20,7 +27,7 @@ function extractKeywords(question) {
     'they', 'them', 'their', 'it', 'its', 'from', 'by', 'as', 'into',
     'please', 'give', 'show', 'list', 'get', 'find', 'looking', 'like'
   ])
-  return question.toLowerCase()
+  return text.toLowerCase()
     .split(/\s+/)
     .map(w => w.replace(/[^a-z0-9]/g, ''))
     .filter(w => w.length > 2 && !stopWords.has(w))
@@ -39,24 +46,24 @@ export async function getRelevantContext(question) {
 
   const contexts = []
 
-  // Search company FAQs
-  const faqCond = makeLike(['FAQQuestion', 'FAQAnswer', 'FAQCategory'], keywords)
+  // FAQ table uses lowercase column names: question, answer
+  const faqCond = makeLike(['question', 'answer'], keywords)
   const faqs = runQuery(
-    `SET NOCOUNT ON; SELECT TOP 3 FAQQuestion, FAQAnswer FROM Admin_tblFAQs WHERE PortalID=38 AND (${faqCond})`
+    `SET NOCOUNT ON; SELECT TOP 3 CAST('Q: ' + question + CHAR(10) + 'A: ' + answer AS nvarchar(4000)) FROM Admin_tblFAQs WHERE portalid=38 AND (${faqCond})`
   )
   if (faqs) contexts.push(`Company FAQ:\n${faqs}`)
 
-  // Search communities
+  // Communities
   const commCond = makeLike(['CommunityName', 'City', 'State'], keywords)
   const communities = runQuery(
-    `SET NOCOUNT ON; SELECT TOP 3 CommunityName, City, State, MinPrice, MaxPrice, Amenities FROM Admin_tblCommunities WHERE (${commCond})`
+    `SET NOCOUNT ON; SELECT TOP 3 CAST(CommunityName + ', ' + City + ', ' + State + ' | Price: $' + CAST(ISNULL(MinPrice,0) AS nvarchar) + '-$' + CAST(ISNULL(MaxPrice,0) AS nvarchar) + ' | Amenities: ' + ISNULL(Amenities,'') AS nvarchar(4000)) FROM Admin_tblCommunities WHERE (${commCond})`
   )
   if (communities) contexts.push(`Communities:\n${communities}`)
 
-  // Search floor plans
-  const fpCond = makeLike(['FloorplanName', 'Style'], keywords)
+  // Floor plans
+  const fpCond = makeLike(['FloorplanName', 'Style', 'Features'], keywords)
   const floorplans = runQuery(
-    `SET NOCOUNT ON; SELECT TOP 5 FloorplanName, MinSquareFeet, MaxSquareFeet, MinBedrooms, MaxBedrooms, MinBaths, MaxBaths, MinPrice, MaxPrice, Style FROM Admin_tblFloorplans WHERE (${fpCond})`
+    `SET NOCOUNT ON; SELECT TOP 5 CAST(FloorplanName + ' | ' + ISNULL(Style,'') + ' | Beds: ' + CAST(ISNULL(MinBedrooms,0) AS nvarchar) + '-' + CAST(ISNULL(MaxBedrooms,0) AS nvarchar) + ' | Baths: ' + CAST(ISNULL(MinBaths,0) AS nvarchar) + '-' + CAST(ISNULL(MaxBaths,0) AS nvarchar) + ' | SqFt: ' + CAST(ISNULL(MinSquareFeet,0) AS nvarchar) + '-' + CAST(ISNULL(MaxSquareFeet,0) AS nvarchar) + ' | Price: $' + CAST(ISNULL(MinPrice,0) AS nvarchar) + '-$' + CAST(ISNULL(MaxPrice,0) AS nvarchar) AS nvarchar(4000)) FROM Admin_tblFloorplans WHERE (${fpCond})`
   )
   if (floorplans) contexts.push(`Floor Plans:\n${floorplans}`)
 

@@ -17,11 +17,18 @@ export async function POST(req) {
 
   const dbContext = await getRelevantContext(recentUserText)
 
-  const formatGuide = `Write clear, conversational responses. Use plain prose paragraphs. When listing items, use simple bullet points (dashes). Do not use markdown tables, pipe characters (|), horizontal rules, heading syntax (##, ###), or blockquotes. Do not use emojis. Format all prices with dollar signs and commas (e.g., $290,000 not 290000).`
+  const formatRules = `FORMATTING RULES (follow strictly):
+- Write in plain prose or simple dash bullet points only.
+- NEVER use markdown tables or pipe characters (|).
+- NEVER use heading syntax (##, ###, ####).
+- NEVER use horizontal rules (---).
+- NEVER use blockquotes (>).
+- NEVER use emojis.
+- Format prices with a dollar sign and commas: $290,000.`
 
   const systemPrompt = dbContext
-    ? `You are a helpful AI assistant for a homebuilding platform serving North Carolina. Our database includes communities and floor plans from multiple homebuilders across the Triangle area and beyond. You have access to the following information from the database:\n\n${dbContext}\n\nAnswer using this database information when relevant. If the question goes beyond what the database covers, use web search to find accurate, current information.\n\n${formatGuide}`
-    : `You are a helpful AI assistant for a homebuilding platform serving North Carolina, with communities and floor plans from multiple builders. Use web search to find accurate, current information to answer homebuilding questions.\n\n${formatGuide}`
+    ? `${formatRules}\n\nYou are a helpful AI assistant for a homebuilding platform serving North Carolina. Our database includes communities and floor plans from multiple homebuilders across the Triangle area and beyond. You have access to the following information from the database:\n\n${dbContext}\n\nAnswer using this database information when relevant. If the question goes beyond what the database covers, use web search to find accurate, current information.`
+    : `${formatRules}\n\nYou are a helpful AI assistant for a homebuilding platform serving North Carolina, with communities and floor plans from multiple builders. Use web search to find accurate, current information to answer homebuilding questions.`
 
   const apiMessages = messages.map(m => ({ role: m.role, content: m.content }))
 

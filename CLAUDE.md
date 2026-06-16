@@ -86,3 +86,34 @@ Both DB connections use Windows Authentication — no connection string or crede
 ## Path alias
 
 `@/*` maps to `./src/*` via `jsconfig.json`. PostCSS config (`postcss.config.js`) is required for Tailwind — do not delete it.
+
+---
+
+## Planned Next Feature: Conversational Lead Capture
+
+**Goal:** Get homebuyers to share contact info (email/phone) inside the chat, without popup forms. Claude asks naturally at high-intent moments; the user types into the normal chat box.
+
+### Three trigger moments
+
+| Moment | What Claude says | Info collected |
+|---|---|---|
+| User browses floor plans or specific listings | "Drop your email below and I'll have our team send you these details." | Email |
+| No listings match the user's criteria | "Want us to notify you when something matching your search becomes available? Just leave your email." | Email |
+| User asks about tours, financing, next steps, or timeline | "Want a quick call with our team? Leave your phone or email below." | Phone or email |
+
+Claude offers contact collection **at most once per session** (enforced in system prompt via conversation history awareness).
+
+### Files to create / modify
+
+**`src/app/api/chat/route.js`** — Two additions:
+1. Before calling Claude, run `extractContactInfo(currentUserText)` using email + phone regex. If contact info is found, write `leads/{sessionId}.json` (same pattern as `chat-logs/`).
+2. Append lead-capture instructions to `formatRules` in the system prompt (when to ask, how to phrase it, not to repeat).
+
+**`leads/`** folder (gitignored) — JSON files, one per session, written by route.js when email/phone is detected in a user message. Schema: `{ sessionId, email, phone, capturedAt }`.
+
+**`.gitignore`** — Add `leads/`.
+
+### What's deferred
+- Email notification to Ken Harvey team (SMTP/SendGrid) — add credentials to `.env.local` when ready
+- CRM integration
+- Sales dashboard for reviewing leads (`leads/` folder is the MVP)

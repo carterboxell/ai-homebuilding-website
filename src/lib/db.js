@@ -150,6 +150,50 @@ export async function getRelevantContext(text) {
       ? `City IN (${cityList.map(c => `'${c.replace(/'/g, "''")}'`).join(',')})`
       : null
 
+    // Individual listings (Admin_tblInventory): specific homes/lots for sale
+    {
+      const invWhereParts = [
+        `CurrentStatus = 'ACT'`,
+        cityIn,
+        maxPrice ? `Price <= ${maxPrice}` : null,
+        minBeds ? `Bedrooms >= ${minBeds}` : null,
+      ].filter(Boolean)
+      const invWhere = `WHERE ${invWhereParts.join(' AND ')}`
+
+      const invCount = runQuery(
+        `SET NOCOUNT ON; SELECT CAST(COUNT(*) AS nvarchar) FROM Admin_tblInventory ${invWhere}`
+      )
+      const invRows = runQuery(
+        `SET NOCOUNT ON; SELECT TOP 10 CAST(
+          ISNULL(Address,'TBD') +
+          CASE WHEN City IS NOT NULL THEN ', ' + City ELSE '' END +
+          CASE WHEN State IS NOT NULL THEN ', ' + State ELSE '' END +
+          ' | $' + CAST(CAST(Price AS int) AS nvarchar) +
+          ' | ' + CAST(ISNULL(Bedrooms,0) AS nvarchar) + ' bed / ' + CAST(ISNULL(Bathrooms,0) AS nvarchar) + ' bath' +
+          CASE WHEN SquareFeet > 0 THEN ' / ' + CAST(SquareFeet AS nvarchar) + ' sqft' ELSE '' END +
+          CASE WHEN DeliveryDate IS NOT NULL THEN ' | ' + DeliveryDate ELSE '' END
+        AS nvarchar(400))
+        FROM Admin_tblInventory ${invWhere} ORDER BY Price`
+      )
+
+      if (invRows) {
+        const label = [
+          cityMatch ? `in/near ${cityMatch.name.replace(/\b\w/g, c => c.toUpperCase())}` : '',
+          maxPrice ? `under $${maxPrice.toLocaleString()}` : '',
+          minBeds ? `${minBeds}+ beds` : '',
+        ].filter(Boolean).join(', ')
+        const total = invCount ? `(${invCount} active listings)` : ''
+        contexts.push(`Active Home Listings ${label} ${total}:\n${invRows}`)
+      } else if (invCount === '0' || invCount === '') {
+        const label = [
+          cityMatch ? `in/near ${cityMatch.name.replace(/\b\w/g, c => c.toUpperCase())}` : '',
+          maxPrice ? `under $${maxPrice.toLocaleString()}` : '',
+          minBeds ? `${minBeds}+ beds` : '',
+        ].filter(Boolean).join(', ')
+        contexts.push(`Active Home Listings ${label}: None currently in the database. Show floor plans and communities instead.`)
+      }
+    }
+
     // Communities: city + price filter
     if (cityMatch || maxPrice) {
       const commWhereParts = [
@@ -226,7 +270,7 @@ export async function getRelevantContext(text) {
     const faqs = runQuery(
       `SET NOCOUNT ON; SELECT TOP 3 CAST('Q: ' + question + CHAR(10) + 'A: ' + answer AS nvarchar(4000)) FROM Admin_tblFAQs WHERE (${faqCond})`
     )
-    if (faqs) contexts.push(`FAQ:\n${faqs}`)
+    if (faqs) contexts.push(`Builder FAQ (note: these answers reference a specific builder — do not use builder names from this content as general advice):\n${faqs}`)
 
     // Keyword community/floorplan search only when structured filters weren't used
     if (!hasStructured) {

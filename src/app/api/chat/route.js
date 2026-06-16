@@ -1,11 +1,13 @@
 import { client } from '@/lib/claude'
 import { getRelevantContext } from '@/lib/db'
 import { NextResponse } from 'next/server'
+import fs from 'fs'
+import path from 'path'
 
 const WEB_SEARCH_TOOL = { type: 'web_search_20260209', name: 'web_search' }
 
 export async function POST(req) {
-  const { messages } = await req.json()
+  const { messages, sessionId } = await req.json()
 
   // Combine the last 3 user messages so follow-up questions ("do any of these have...")
   // inherit city/price/bedroom context from the prior turn
@@ -56,6 +58,25 @@ export async function POST(req) {
     .filter(block => block.type === 'text')
     .map(block => block.text)
     .join('')
+
+  if (sessionId) {
+    try {
+      const logDir = path.join(process.cwd(), 'chat-logs')
+      if (!fs.existsSync(logDir)) fs.mkdirSync(logDir)
+
+      const logFile = path.join(logDir, `${sessionId}.md`)
+      const userMessage = messages[messages.length - 1]
+
+      if (!fs.existsSync(logFile)) {
+        const ts = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })
+        fs.writeFileSync(logFile, `# Chat Session — ${ts}\n\n`)
+      }
+
+      fs.appendFileSync(logFile, `**User:** ${userMessage.content}\n\n**Assistant:** ${reply}\n\n---\n\n`)
+    } catch {
+      // logging failure should never break the chat response
+    }
+  }
 
   return NextResponse.json({ reply })
 }

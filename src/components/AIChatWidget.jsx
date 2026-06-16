@@ -28,6 +28,10 @@ export default function AIChatWidget() {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const bottomRef = useRef(null)
+  const sessionId = useRef(null)
+  useEffect(() => {
+    if (!sessionId.current) sessionId.current = crypto.randomUUID()
+  }, [])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -47,7 +51,7 @@ export default function AIChatWidget() {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: history }),
+        body: JSON.stringify({ messages: history, sessionId: sessionId.current }),
       })
       const data = await res.json()
       setMessages([...history, { role: 'assistant', content: data.reply }])

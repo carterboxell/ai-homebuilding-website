@@ -172,8 +172,15 @@ export async function getRelevantContext(currentText, contextText = currentText)
   // Detect generic browse intent so we can return count + sample even without filters
   const browseFloorPlans = /floor\s*plans?|floorplans?/i.test(currentText)
   const browseCommunities = /\bcommunities\b|\bcommunity\b/i.test(currentText)
+  // "how many homes for sale", "what homes are available", "total listings", "show me listings", etc.
+  const browseListings =
+    /\bhow many\b[^.?]*\b(?:homes?|houses?|listings?|properties?)\b/i.test(currentText) ||
+    /\b(?:total|all)\b[^.?]*\bfor sale\b/i.test(currentText) ||
+    /\bfor sale\b[^.?]*\b(?:total|all)\b/i.test(currentText) ||
+    /\b(?:homes?|houses?|listings?|properties?)\b[^.?]*\b(?:available|for sale)\b/i.test(currentText) ||
+    /\b(?:available|for sale)\b[^.?]*\b(?:homes?|houses?|listings?|properties?)\b/i.test(currentText)
 
-  if (!keywords.length && !hasStructured) return null
+  if (!keywords.length && !hasStructured && !browseFloorPlans && !browseCommunities && !browseListings) return null
 
   const contexts = []
 
@@ -382,6 +389,32 @@ export async function getRelevantContext(currentText, contextText = currentText)
     if (commBrowseRows) {
       const total = commBrowseCount ? `${commBrowseCount} total` : ''
       contexts.push(`Ken Harvey Communities (${total} — sample of 5 shown):\n${commBrowseRows}`)
+    }
+  }
+
+  if (browseListings && !contexts.some(c => c.includes('Active Listings'))) {
+    const listBrowseCount = runQuery(
+      `SET NOCOUNT ON; SELECT CAST(COUNT(*) AS nvarchar) FROM vwBuilderProperties_TABLE WHERE Status IN ('ACT','PEND','Coming Soon')`,
+      'IDXPlus'
+    )
+    const listBrowseRows = runQuery(
+      `SET NOCOUNT ON; SELECT TOP 5 CAST(
+        ISNULL(Address,'TBD') +
+        CASE WHEN City IS NOT NULL THEN ', ' + City ELSE '' END +
+        CASE WHEN State IS NOT NULL THEN ', ' + State ELSE '' END +
+        ' | $' + CAST(CAST(Price AS int) AS nvarchar) +
+        ' | ' + CAST(ISNULL(Bedrooms,0) AS nvarchar) + ' bed / ' + CAST(ISNULL(Bathrooms,0) AS nvarchar) + ' bath' +
+        CASE WHEN SquareFeet > 0 THEN ' / ' + CAST(SquareFeet AS nvarchar) + ' sqft' ELSE '' END +
+        CASE WHEN CommunityName IS NOT NULL THEN ' | ' + CommunityName ELSE '' END +
+        ' | Status: ' + Status
+      AS nvarchar(500)) FROM vwBuilderProperties_TABLE WHERE Status IN ('ACT','PEND','Coming Soon') ORDER BY Price`,
+      'IDXPlus'
+    )
+    if (listBrowseRows) {
+      const total = listBrowseCount ? `${listBrowseCount} total` : ''
+      contexts.push(`Ken Harvey Active Listings (${total} — sample of 5 shown):\n${listBrowseRows}`)
+    } else if (listBrowseCount) {
+      contexts.push(`Ken Harvey has ${listBrowseCount} active/pending homes for sale.`)
     }
   }
 

@@ -204,10 +204,11 @@ export async function getRelevantContext(text) {
     // Communities: city + price filter
     if (cityMatch || maxPrice) {
       const commWhereParts = [
+        'PortalID = 38',
         cityIn,
         maxPrice ? `(MinPrice <= ${maxPrice} OR MinPrice IS NULL OR MinPrice = 0)` : null
       ].filter(Boolean)
-      const commWhere = commWhereParts.length ? `WHERE ${commWhereParts.join(' AND ')}` : ''
+      const commWhere = `WHERE ${commWhereParts.join(' AND ')}`
 
       const commCount = runQuery(
         `SET NOCOUNT ON; SELECT CAST(COUNT(*) AS nvarchar) FROM Admin_tblCommunities ${commWhere}`
@@ -233,11 +234,12 @@ export async function getRelevantContext(text) {
 
     // Floor plans: bedrooms + price + feature flags
     const fpWhereParts = [
+      'PortalID = 38',
       minBeds ? `(MinBedrooms >= ${minBeds} OR MaxBedrooms >= ${minBeds})` : null,
       maxPrice ? `(MinPrice <= ${maxPrice} OR MinPrice IS NULL OR MinPrice = 0)` : null,
       ...fpFeatures
     ].filter(Boolean)
-    const fpWhere = fpWhereParts.length ? `WHERE ${fpWhereParts.join(' AND ')}` : ''
+    const fpWhere = `WHERE ${fpWhereParts.join(' AND ')}`
 
     const fpCount = runQuery(
       `SET NOCOUNT ON; SELECT CAST(COUNT(*) AS nvarchar) FROM Admin_tblFloorplans ${fpWhere}`
@@ -286,7 +288,7 @@ export async function getRelevantContext(text) {
         `SET NOCOUNT ON; SELECT TOP 5 CAST(
           CommunityName + ', ' + ISNULL(City,'') + ', ' + ISNULL(State,'') +
           ' | Price: $' + CAST(ISNULL(MinPrice,0) AS nvarchar) + '-$' + CAST(ISNULL(MaxPrice,0) AS nvarchar)
-        AS nvarchar(300)) FROM Admin_tblCommunities WHERE (${commCond})`
+        AS nvarchar(300)) FROM Admin_tblCommunities WHERE PortalID = 38 AND (${commCond})`
       )
       if (communities) contexts.push(`Ken Harvey Communities:\n${communities}`)
 
@@ -297,7 +299,7 @@ export async function getRelevantContext(text) {
           ' | Beds: ' + CAST(ISNULL(MinBedrooms,0) AS nvarchar) +
           ' | SqFt: ' + CAST(ISNULL(MinSquareFeet,0) AS nvarchar) + '-' + CAST(ISNULL(MaxSquareFeet,0) AS nvarchar) +
           ${FP_FEATURE_COLS}
-        AS nvarchar(400)) FROM Admin_tblFloorplans WHERE (${fpCond})`
+        AS nvarchar(400)) FROM Admin_tblFloorplans WHERE PortalID = 38 AND (${fpCond})`
       )
       if (floorplans) contexts.push(`Ken Harvey Floor Plans:\n${floorplans}`)
     }

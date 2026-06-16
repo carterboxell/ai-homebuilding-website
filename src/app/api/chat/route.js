@@ -17,9 +17,11 @@ export async function POST(req) {
 
   const dbContext = await getRelevantContext(recentUserText)
 
+  const formatGuide = `Write clear, conversational responses. Use plain prose paragraphs. When listing items, use simple bullet points (dashes). Do not use markdown tables, pipe characters (|), horizontal rules, heading syntax (##, ###), or blockquotes. Do not use emojis. Format all prices with dollar signs and commas (e.g., $290,000 not 290000).`
+
   const systemPrompt = dbContext
-    ? `You are a helpful AI assistant for a homebuilding platform serving North Carolina. Our database includes communities and floor plans from multiple homebuilders across the Triangle area and beyond. You have access to the following information from the database:\n\n${dbContext}\n\nAnswer using this database information when relevant. If the question goes beyond what the database covers, use web search to find accurate, current information.`
-    : `You are a helpful AI assistant for a homebuilding platform serving North Carolina, with communities and floor plans from multiple builders. Use web search to find accurate, current information to answer homebuilding questions.`
+    ? `You are a helpful AI assistant for a homebuilding platform serving North Carolina. Our database includes communities and floor plans from multiple homebuilders across the Triangle area and beyond. You have access to the following information from the database:\n\n${dbContext}\n\nAnswer using this database information when relevant. If the question goes beyond what the database covers, use web search to find accurate, current information.\n\n${formatGuide}`
+    : `You are a helpful AI assistant for a homebuilding platform serving North Carolina, with communities and floor plans from multiple builders. Use web search to find accurate, current information to answer homebuilding questions.\n\n${formatGuide}`
 
   const apiMessages = messages.map(m => ({ role: m.role, content: m.content }))
 

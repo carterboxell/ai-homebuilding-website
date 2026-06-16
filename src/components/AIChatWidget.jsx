@@ -1,10 +1,29 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+import ReactMarkdown from 'react-markdown'
+
+const mdComponents = {
+  p:      ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+  ul:     ({ children }) => <ul className="list-disc ml-4 mb-2 space-y-1">{children}</ul>,
+  ol:     ({ children }) => <ol className="list-decimal ml-4 mb-2 space-y-1">{children}</ol>,
+  li:     ({ children }) => <li>{children}</li>,
+  strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+  em:     ({ children }) => <em className="italic">{children}</em>,
+  a:      ({ href, children }) => <a href={href} className="underline" target="_blank" rel="noreferrer">{children}</a>,
+  hr:     () => <hr className="my-2 border-gray-200" />,
+  // Flatten tables into a readable list rather than rendering raw pipes
+  table:  ({ children }) => <div className="mb-2">{children}</div>,
+  thead:  () => null,
+  tbody:  ({ children }) => <ul className="list-disc ml-4 space-y-1">{children}</ul>,
+  tr:     ({ children }) => <li>{children}</li>,
+  td:     ({ children }) => <span className="after:content-['_·_'] last:after:content-['']">{children}</span>,
+  th:     () => null,
+}
 
 export default function AIChatWidget() {
   const [messages, setMessages] = useState([
-    { role: 'assistant', content: 'Hi! I can answer questions about floor plans, pricing, timelines, and more. What would you like to know?' },
+    { role: 'assistant', content: 'Hi! I can answer questions about floor plans, pricing, communities, and more. What would you like to know?' },
   ])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -54,7 +73,9 @@ export default function AIChatWidget() {
                       : 'bg-white border border-gray-200 text-gray-800 rounded-bl-sm'
                   }`}
                 >
-                  {msg.content}
+                  {msg.role === 'assistant'
+                    ? <ReactMarkdown components={mdComponents}>{msg.content}</ReactMarkdown>
+                    : msg.content}
                 </div>
               </div>
             ))}
@@ -72,7 +93,7 @@ export default function AIChatWidget() {
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask about floor plans, pricing, materials…"
+              placeholder="Ask about floor plans, pricing, communities…"
               className="flex-1 px-4 py-3 text-sm outline-none"
             />
             <button

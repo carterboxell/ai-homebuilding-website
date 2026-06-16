@@ -43,17 +43,41 @@ function runQuery(sql, db = 'WinStarHomes') {
     .trim()
 }
 
-// Extract max price from "under 750k", "below $500,000", "less than 800000"
+// Extract max price from "under 750k", "below $1.2 million", "between $500k and $800k", etc.
 function parseMaxPrice(text) {
-  const q = text.toLowerCase()
-  let m = q.match(/(?:under|below|less than|up to|no more than|max(?:imum)?|within)\s*\$?\s*([\d,]+)\s*(k|thousand)?/)
+  const wordNums = { one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eight:8, nine:9, ten:10 }
+  // Normalize written-out amounts before regex: "eight hundred thousand" → "800000"
+  let q = text.toLowerCase()
+    .replace(/\b(one|two|three|four|five|six|seven|eight|nine|ten)\s+hundred\s+thousand\b/g,
+      m => (wordNums[m.split(' ')[0]] * 100000).toString())
+    .replace(/\b(one|two|three|four|five|six|seven|eight|nine|ten)\s+million\b/g,
+      m => (wordNums[m.split(' ')[0]] * 1000000).toString())
+
+  // "between $X and $Y" — SQL can't filter min price, so use the higher bound as max
+  const between = q.match(/between\s*\$?\s*([\d,.]+)\s*(k|thousand|million)?\s*(?:and|to)\s*\$?\s*([\d,.]+)\s*(k|thousand|million)?/)
+  if (between) {
+    const toNum = (n, unit) => {
+      let v = parseFloat(n.replace(/,/g, ''))
+      if (unit === 'k' || unit === 'thousand') v *= 1000
+      else if (unit === 'million') v *= 1000000
+      else if (v < 5000) v *= 1000
+      return v
+    }
+    return Math.max(toNum(between[1], between[2]), toNum(between[3], between[4]))
+  }
+
+  // Keyword + amount (supports "million" and decimal like "1.2 million")
+  let m = q.match(/(?:under|below|less than|up to|no more than|max(?:imum)?|within)\s*\$?\s*([\d,.]+)\s*(k|thousand|million)?/)
   if (m) {
     let price = parseFloat(m[1].replace(/,/g, ''))
     if (m[2] === 'k' || m[2] === 'thousand') price *= 1000
+    else if (m[2] === 'million') price *= 1000000
     else if (price < 5000) price *= 1000
     return price
   }
-  m = q.match(/\b([\d,]+)k\b/)
+
+  // Bare "Nk" shorthand
+  m = q.match(/\b([\d,.]+)k\b/)
   if (m) return parseFloat(m[1].replace(/,/g, '')) * 1000
   return null
 }
@@ -69,7 +93,7 @@ function parseMinBeds(text) {
   if (m) return parseInt(m[1])
   m = q.match(/(\d+)\s*(?:\+|or more|plus)\s*bed/)
   if (m) return parseInt(m[1])
-  m = q.match(/(\d+)\s*bed(?:room)?s?/)
+  m = q.match(/(\d+)[-\s]*bed(?:room)?s?/)
   if (m) return parseInt(m[1])
   return null
 }
@@ -197,7 +221,7 @@ export async function getRelevantContext(currentText, contextText = currentText)
         const total = invCount ? `(${invCount} listings)` : ''
         contexts.push(`Ken Harvey Active Listings ${label} ${total}:\n${invRows}`)
       } else {
-        contexts.push(`Ken Harvey Active Listings ${label}: None currently available matching these criteria. Present floor plans and communities as options instead.`)
+        contexts.push(`Ken Harvey Active Listings ${label}: None currently available matching these criteria. You may suggest floor plans and communities as alternatives, but make clear that our available homes start at higher price points than the user requested.`)
       }
     }
 

@@ -23,7 +23,7 @@ const mdComponents = {
 
 export default function AIChatWidget() {
   const [messages, setMessages] = useState([
-    { role: 'assistant', content: 'Hi! I can answer questions about floor plans, pricing, communities, and more. What would you like to know?' },
+    { role: 'assistant', content: 'Hi! I\'m the Ken Harvey Homes AI assistant. I can help you explore available homes, floor plans, and communities. What can I help you with today?' },
   ])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -97,7 +97,7 @@ export default function AIChatWidget() {
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask about floor plans, pricing, communities…"
+              placeholder="Ask about Ken Harvey homes, floor plans, communities…"
               className="flex-1 px-4 py-3 text-sm outline-none"
             />
             <button

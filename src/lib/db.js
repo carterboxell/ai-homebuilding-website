@@ -1,6 +1,6 @@
 import { spawnSync } from 'child_process'
 
-// Nearby city groups for Triangle NC area — used for "near X" queries
+// Nearby city groups for Ken Harvey Homes markets in NC
 const CITY_GROUPS = {
   'apex':          ['Apex', 'Cary', 'Holly Springs', 'Fuquay-Varina', 'Morrisville'],
   'cary':          ['Cary', 'Apex', 'Morrisville', 'Holly Springs', 'Raleigh'],
@@ -18,6 +18,7 @@ const CITY_GROUPS = {
   'wendell':       ['Wendell', 'Zebulon', 'Knightdale', 'Raleigh'],
   'rolesville':    ['Rolesville', 'Wake Forest', 'Youngsville'],
   'youngsville':   ['Youngsville', 'Wake Forest', 'Rolesville', 'Franklinton'],
+  'louisburg':     ['Louisburg', 'Youngsville', 'Wake Forest', 'Franklinton'],
   'selma':         ['Selma', 'Smithfield', 'Benson'],
   'pittsboro':     ['Pittsboro', 'Chapel Hill', 'Sanford'],
   'knightdale':    ['Knightdale', 'Wendell', 'Zebulon', 'Raleigh'],
@@ -25,10 +26,10 @@ const CITY_GROUPS = {
   'angier':        ['Angier', 'Fuquay-Varina', 'Lillington'],
 }
 
-function runQuery(sql) {
+function runQuery(sql, db = 'WinStarHomes') {
   const result = spawnSync(
     'sqlcmd',
-    ['-S', 'localhost\\SQLEXPRESS', '-d', 'WinStarHomes', '-No', '-C', '-h', '-1', '-Q', sql],
+    ['-S', 'localhost\\SQLEXPRESS', '-d', db, '-No', '-C', '-h', '-1', '-Q', sql],
     { encoding: 'utf8', timeout: 8000, windowsHide: true }
   )
   if (result.error || result.status !== 0) return ''
@@ -150,18 +151,19 @@ export async function getRelevantContext(text) {
       ? `City IN (${cityList.map(c => `'${c.replace(/'/g, "''")}'`).join(',')})`
       : null
 
-    // Individual listings (Admin_tblInventory): specific homes/lots for sale
+    // Active Ken Harvey listings from IDXPlus (primary source for individual homes)
     {
       const invWhereParts = [
-        `CurrentStatus = 'ACT'`,
+        `Status IN ('ACT','PEND','Coming Soon')`,
         cityIn,
         maxPrice ? `Price <= ${maxPrice}` : null,
-        minBeds ? `Bedrooms >= ${minBeds}` : null,
+        minBeds  ? `Bedrooms >= ${minBeds}` : null,
       ].filter(Boolean)
       const invWhere = `WHERE ${invWhereParts.join(' AND ')}`
 
       const invCount = runQuery(
-        `SET NOCOUNT ON; SELECT CAST(COUNT(*) AS nvarchar) FROM Admin_tblInventory ${invWhere}`
+        `SET NOCOUNT ON; SELECT CAST(COUNT(*) AS nvarchar) FROM vwBuilderProperties_TABLE ${invWhere}`,
+        'IDXPlus'
       )
       const invRows = runQuery(
         `SET NOCOUNT ON; SELECT TOP 10 CAST(
@@ -171,26 +173,26 @@ export async function getRelevantContext(text) {
           ' | $' + CAST(CAST(Price AS int) AS nvarchar) +
           ' | ' + CAST(ISNULL(Bedrooms,0) AS nvarchar) + ' bed / ' + CAST(ISNULL(Bathrooms,0) AS nvarchar) + ' bath' +
           CASE WHEN SquareFeet > 0 THEN ' / ' + CAST(SquareFeet AS nvarchar) + ' sqft' ELSE '' END +
-          CASE WHEN DeliveryDate IS NOT NULL THEN ' | ' + DeliveryDate ELSE '' END
-        AS nvarchar(400))
-        FROM Admin_tblInventory ${invWhere} ORDER BY Price`
+          CASE WHEN CommunityName IS NOT NULL THEN ' | ' + CommunityName ELSE '' END +
+          ' | Status: ' + Status +
+          CASE WHEN CompletionDate < '2100-01-01' THEN ' | Est. completion: ' + CONVERT(nvarchar,CompletionDate,101) ELSE '' END +
+          CASE WHEN SchoolElem IS NOT NULL THEN ' | Schools: ' + SchoolElem + ' / ' + ISNULL(SchoolJunior,'') + ' / ' + ISNULL(SchoolHigh,'') ELSE '' END
+        AS nvarchar(500))
+        FROM vwBuilderProperties_TABLE ${invWhere} ORDER BY Price`,
+        'IDXPlus'
       )
 
+      const label = [
+        cityMatch ? `in/near ${cityMatch.name.replace(/\b\w/g, c => c.toUpperCase())}` : '',
+        maxPrice ? `under $${maxPrice.toLocaleString()}` : '',
+        minBeds  ? `${minBeds}+ beds` : '',
+      ].filter(Boolean).join(', ')
+
       if (invRows) {
-        const label = [
-          cityMatch ? `in/near ${cityMatch.name.replace(/\b\w/g, c => c.toUpperCase())}` : '',
-          maxPrice ? `under $${maxPrice.toLocaleString()}` : '',
-          minBeds ? `${minBeds}+ beds` : '',
-        ].filter(Boolean).join(', ')
-        const total = invCount ? `(${invCount} active listings)` : ''
-        contexts.push(`Active Home Listings ${label} ${total}:\n${invRows}`)
-      } else if (invCount === '0' || invCount === '') {
-        const label = [
-          cityMatch ? `in/near ${cityMatch.name.replace(/\b\w/g, c => c.toUpperCase())}` : '',
-          maxPrice ? `under $${maxPrice.toLocaleString()}` : '',
-          minBeds ? `${minBeds}+ beds` : '',
-        ].filter(Boolean).join(', ')
-        contexts.push(`Active Home Listings ${label}: None currently in the database. Show floor plans and communities instead.`)
+        const total = invCount ? `(${invCount} listings)` : ''
+        contexts.push(`Ken Harvey Active Listings ${label} ${total}:\n${invRows}`)
+      } else {
+        contexts.push(`Ken Harvey Active Listings ${label}: None currently available matching these criteria. Present floor plans and communities as options instead.`)
       }
     }
 
@@ -220,7 +222,7 @@ export async function getRelevantContext(text) {
           maxPrice ? `under $${maxPrice.toLocaleString()}` : ''
         ].filter(Boolean).join(', ')
         const total = commCount ? `(${commCount} total)` : ''
-        contexts.push(`Communities ${label} ${total}:\n${commRows}`)
+        contexts.push(`Ken Harvey Communities ${label} ${total}:\n${commRows}`)
       }
     }
 
@@ -252,15 +254,15 @@ export async function getRelevantContext(text) {
       const label = [
         minBeds ? `${minBeds}+ bedrooms` : '',
         maxPrice ? `under $${maxPrice.toLocaleString()}` : '',
-        fpFeatures.length ? fpFeatures.map(f => f.replace(/\w+\s*=.*|.*IN.*/, m =>
-          m.includes('FirstFloor') ? 'first floor master' :
-          m.includes('BonusRoom') ? 'bonus room' :
-          m.includes('Study') ? 'study' :
-          m.includes('Basement') ? 'basement' : 'feature'
-        )).join(', ') : ''
+        fpFeatures.length ? fpFeatures.map(f =>
+          f.includes('FirstFloor') ? 'first floor master' :
+          f.includes('BonusRoom')  ? 'bonus room' :
+          f.includes('Study')      ? 'study' :
+          f.includes('Basement')   ? 'basement' : 'feature'
+        ).join(', ') : ''
       ].filter(Boolean).join(', ')
       const total = fpCount ? `(${fpCount} floor plans total)` : ''
-      contexts.push(`Available Floor Plans ${label} ${total}:\n${fpRows}`)
+      contexts.push(`Ken Harvey Floor Plans ${label} ${total}:\n${fpRows}`)
     }
   }
 
@@ -268,9 +270,9 @@ export async function getRelevantContext(text) {
   if (keywords.length) {
     const faqCond = makeLike(['question', 'answer'], keywords)
     const faqs = runQuery(
-      `SET NOCOUNT ON; SELECT TOP 3 CAST('Q: ' + question + CHAR(10) + 'A: ' + answer AS nvarchar(4000)) FROM Admin_tblFAQs WHERE (${faqCond})`
+      `SET NOCOUNT ON; SELECT TOP 3 CAST('Q: ' + question + CHAR(10) + 'A: ' + answer AS nvarchar(4000)) FROM Admin_tblFAQs WHERE portalid = 38 AND (${faqCond})`
     )
-    if (faqs) contexts.push(`Builder FAQ (note: these answers reference a specific builder — do not use builder names from this content as general advice):\n${faqs}`)
+    if (faqs) contexts.push(`Ken Harvey Homes FAQ:\n${faqs}`)
 
     // Keyword community/floorplan search only when structured filters weren't used
     if (!hasStructured) {
@@ -281,7 +283,7 @@ export async function getRelevantContext(text) {
           ' | Price: $' + CAST(ISNULL(MinPrice,0) AS nvarchar) + '-$' + CAST(ISNULL(MaxPrice,0) AS nvarchar)
         AS nvarchar(300)) FROM Admin_tblCommunities WHERE (${commCond})`
       )
-      if (communities) contexts.push(`Communities:\n${communities}`)
+      if (communities) contexts.push(`Ken Harvey Communities:\n${communities}`)
 
       const fpCond = makeLike(['FloorplanName', 'Style', 'Features'], keywords)
       const floorplans = runQuery(
@@ -292,7 +294,7 @@ export async function getRelevantContext(text) {
           ${FP_FEATURE_COLS}
         AS nvarchar(400)) FROM Admin_tblFloorplans WHERE (${fpCond})`
       )
-      if (floorplans) contexts.push(`Floor Plans:\n${floorplans}`)
+      if (floorplans) contexts.push(`Ken Harvey Floor Plans:\n${floorplans}`)
     }
   }
 

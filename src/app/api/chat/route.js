@@ -58,7 +58,7 @@ export async function POST(req) {
   const reply = response.content
     .filter(block => block.type === 'text')
     .map(block => block.text)
-    .join('')
+    .join(' ')
 
   if (sessionId) {
     try {

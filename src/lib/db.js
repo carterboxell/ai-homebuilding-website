@@ -58,9 +58,13 @@ function parseMaxPrice(text) {
   return null
 }
 
-// Extract min bedrooms from "at least 3 bedrooms", "3+ bedrooms", "3 or more bedrooms"
+// Extract min bedrooms from "at least 3 bedrooms", "three bedrooms", "3+ bedrooms", etc.
 function parseMinBeds(text) {
-  const q = text.toLowerCase()
+  const wordNums = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8 }
+  const q = text.toLowerCase().replace(
+    /\b(one|two|three|four|five|six|seven|eight)\b/g,
+    w => wordNums[w]
+  )
   let m = q.match(/(?:at least|minimum|at minimum|min(?:imum)?)\s+(\d+)\s*bed/)
   if (m) return parseInt(m[1])
   m = q.match(/(\d+)\s*(?:\+|or more|plus)\s*bed/)
@@ -110,7 +114,8 @@ function extractKeywords(text) {
     'they', 'them', 'their', 'it', 'its', 'from', 'by', 'as', 'into',
     'please', 'give', 'show', 'list', 'get', 'find', 'looking', 'like',
     'near', 'many', 'sale', 'homes', 'home', 'house', 'houses',
-    'under', 'least', 'available', 'currently', 'these', 'those', 'some'
+    'under', 'least', 'available', 'currently', 'these', 'those', 'some',
+    'ken', 'harvey'
   ])
   return text.toLowerCase()
     .split(/\s+/)

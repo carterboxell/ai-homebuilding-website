@@ -1,21 +1,32 @@
 # AI Homebuilding Website
 
-A Next.js web platform that integrates AI features to enhance the homebuilding and home-buying experience. Built for homebuilders, real estate developers, and their customers.
+A Next.js web platform with an AI chat assistant that answers homebuyer questions using a live SQL Server database of communities and floor plans, falling back to live web search when the database has no relevant information.
 
-## Features
+## How it works
 
-- **AI Chat Assistant** — answers buyer questions about floor plans, materials, and pricing 24/7
-- **Virtual Staging** — AI-generated room staging previews using the Claude API
-- **Smart Cost Estimator** — estimate build costs based on location, size, and material selections
-- **Floor Plan Recommender** — personalized floor plan suggestions based on buyer lifestyle inputs
-- **Material & Finish Advisor** — AI-curated material palettes matched to buyer style preferences
+The chat assistant uses a two-tier approach for every question:
+
+1. **Database-first** — parses the user's question for structured filters (city, price range, bedroom count, floor plan features) and queries a SQL Server database of communities and floor plans. Supports natural language like "under 750k", "at least 3 bedrooms", "first floor master", "near Apex NC".
+2. **Web search fallback** — when the database has no relevant info, Claude uses the `web_search_20260209` server-side tool to fetch current information from the web.
+
+Follow-up questions ("do any of these have a bonus room?") automatically inherit the filters from the previous turn.
+
+## Database
+
+Connects to a SQL Server Express instance (`localhost\SQLEXPRESS`, database `WinStarHomes`) via Windows Authentication. Key tables:
+
+| Table | Contents |
+|---|---|
+| `Admin_tblCommunities` | 457 communities with city, price range, amenities |
+| `Admin_tblFloorplans` | 576 floor plans with beds, baths, sq ft, features (first floor master, bonus room, etc.) |
+| `Admin_tblFAQs` | Builder FAQs searchable by keyword |
 
 ## Tech Stack
 
 - [Next.js 14](https://nextjs.org/) — React framework with App Router
 - [Tailwind CSS](https://tailwindcss.com/) — utility-first styling
-- [Claude API](https://anthropic.com) — AI features (chat, recommendations, generation)
-- [Vercel](https://vercel.com/) — deployment
+- [Claude API](https://anthropic.com) — `claude-sonnet-4-6` with built-in web search
+- SQL Server Express — queried via `sqlcmd` (no ORM or driver needed)
 
 ## Getting Started
 
@@ -25,17 +36,13 @@ cp .env.example .env.local   # add your ANTHROPIC_API_KEY
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+A SQL Server Express instance with the `WinStarHomes` database must be running locally. The connection uses Windows Authentication — no credentials needed in `.env.local`.
 
-## Project Structure
+For production-accurate Tailwind rendering (e.g. screenshots), use the production build:
 
-```
-src/
-  app/           # Next.js App Router pages
-  components/    # Reusable UI components
-  lib/           # API clients and utilities
-  hooks/         # Custom React hooks
-docs/            # Feature specs and design notes
+```bash
+npm run build
+npm start
 ```
 
 ## Environment Variables
@@ -43,7 +50,7 @@ docs/            # Feature specs and design notes
 | Variable | Description |
 |---|---|
 | `ANTHROPIC_API_KEY` | Claude API key from console.anthropic.com |
-| `NEXT_PUBLIC_SITE_NAME` | Builder company name shown in UI |
+| `NEXT_PUBLIC_SITE_NAME` | Company name shown in the page title |
 
 ## License
 

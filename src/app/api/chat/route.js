@@ -6,13 +6,20 @@ const WEB_SEARCH_TOOL = { type: 'web_search_20260209', name: 'web_search' }
 
 export async function POST(req) {
   const { messages } = await req.json()
-  const lastMessage = messages.at(-1)?.content ?? ''
 
-  const dbContext = await getRelevantContext(lastMessage)
+  // Combine the last 3 user messages so follow-up questions ("do any of these have...")
+  // inherit city/price/bedroom context from the prior turn
+  const recentUserText = messages
+    .filter(m => m.role === 'user')
+    .slice(-3)
+    .map(m => m.content)
+    .join(' ')
+
+  const dbContext = await getRelevantContext(recentUserText)
 
   const systemPrompt = dbContext
-    ? `You are a helpful AI assistant for Ken Harvey Homes, a homebuilder in the Triangle area of North Carolina (Raleigh, Wake Forest, Rolesville, Youngsville, Wendell, Selma). You have access to the following information from our company database:\n\n${dbContext}\n\nAnswer using this database information when relevant. If the question goes beyond what the database covers, use web search to find accurate, current information.`
-    : `You are a helpful AI assistant for Ken Harvey Homes, a homebuilder in the Triangle area of North Carolina. Use web search to find accurate, current information to answer the user's homebuilding questions.`
+    ? `You are a helpful AI assistant for a homebuilding platform serving North Carolina. Our database includes communities and floor plans from multiple homebuilders across the Triangle area and beyond. You have access to the following information from the database:\n\n${dbContext}\n\nAnswer using this database information when relevant. If the question goes beyond what the database covers, use web search to find accurate, current information.`
+    : `You are a helpful AI assistant for a homebuilding platform serving North Carolina, with communities and floor plans from multiple builders. Use web search to find accurate, current information to answer homebuilding questions.`
 
   const apiMessages = messages.map(m => ({ role: m.role, content: m.content }))
 

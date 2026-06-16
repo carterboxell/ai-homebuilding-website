@@ -40,7 +40,7 @@ There are no tests or linting scripts configured beyond `next lint`.
 - `Admin_tblFAQs` — columns are lowercase: `question`, `answer`, `portalid`. Ken Harvey Homes entries use `portalid=38`.
 - `Admin_tblCommunities` — `CommunityName`, `City`, `State` (nullable), `MinPrice`, `MaxPrice`. 457 rows across multiple builders.
 - `Admin_tblFloorplans` — `FloorplanName`, `MinBedrooms`, `MaxBedrooms`, `MinBaths`, `MaxBaths`, `MinSquareFeet`, `MaxSquareFeet`, `MinPrice`, `MaxPrice`, `Style`. 576 rows. **`CommunityID` is 0 for all rows** — floor plans are not linked to communities via JOIN.
-- `Admin_tblInventory` — currently 0 rows (no individual listings).
+- `Admin_tblInventory` — 84 rows, 11 active (`CurrentStatus='ACT'`). Only 26 rows have `City` populated (Raleigh, Fuquay-Varina, Clayton, Wendell in NC; several TN cities). `Community` and `Floorplan` columns are NULL for all rows.
 
 **sqlcmd quirks:**
 - `-No -C` flags are required to bypass SSL certificate errors on this instance.

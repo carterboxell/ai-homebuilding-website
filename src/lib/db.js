@@ -137,12 +137,12 @@ const FP_FEATURE_COLS = `
   CASE WHEN Study = 1 THEN ' | Study' ELSE '' END +
   CASE WHEN Basement = 1 THEN ' | Basement' ELSE '' END`
 
-export async function getRelevantContext(text) {
-  const keywords = extractKeywords(text)
-  const maxPrice = parseMaxPrice(text)
-  const minBeds = parseMinBeds(text)
-  const cityMatch = parseCities(text)
-  const fpFeatures = parseFloorPlanFeatures(text)
+export async function getRelevantContext(currentText, contextText = currentText) {
+  const keywords = extractKeywords(currentText)
+  const maxPrice = parseMaxPrice(contextText)   // inherit price from prior turns
+  const minBeds = parseMinBeds(contextText)     // inherit bed count from prior turns
+  const cityMatch = parseCities(currentText)    // city always from current message only
+  const fpFeatures = parseFloorPlanFeatures(contextText)
   const hasStructured = cityMatch || maxPrice || minBeds || fpFeatures.length
 
   if (!keywords.length && !hasStructured) return null

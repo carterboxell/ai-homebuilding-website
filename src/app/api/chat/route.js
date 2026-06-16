@@ -9,15 +9,13 @@ const WEB_SEARCH_TOOL = { type: 'web_search_20260209', name: 'web_search' }
 export async function POST(req) {
   const { messages, sessionId } = await req.json()
 
-  // Combine the last 3 user messages so follow-up questions ("do any of these have...")
-  // inherit city/price/bedroom context from the prior turn
-  const recentUserText = messages
-    .filter(m => m.role === 'user')
-    .slice(-3)
-    .map(m => m.content)
-    .join(' ')
+  const userMessages = messages.filter(m => m.role === 'user')
+  // Current message drives city/location — user saying "show me Youngsville" overrides prior city
+  const currentUserText = userMessages.at(-1)?.content ?? ''
+  // Last 3 messages combined for price/bedroom/feature context inheritance across follow-ups
+  const recentUserText = userMessages.slice(-3).map(m => m.content).join(' ')
 
-  const dbContext = await getRelevantContext(recentUserText)
+  const dbContext = await getRelevantContext(currentUserText, recentUserText)
 
   const formatRules = `FORMATTING RULES (follow strictly):
 - Write in plain prose or simple dash bullet points only.

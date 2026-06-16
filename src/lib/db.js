@@ -169,6 +169,10 @@ export async function getRelevantContext(currentText, contextText = currentText)
   const fpFeatures = parseFloorPlanFeatures(contextText)
   const hasStructured = cityMatch || maxPrice || minBeds || fpFeatures.length
 
+  // Detect generic browse intent so we can return count + sample even without filters
+  const browseFloorPlans = /floor\s*plans?|floorplans?/i.test(currentText)
+  const browseCommunities = /\bcommunities\b|\bcommunity\b/i.test(currentText)
+
   if (!keywords.length && !hasStructured) return null
 
   const contexts = []
@@ -308,15 +312,25 @@ export async function getRelevantContext(currentText, contextText = currentText)
     // Keyword community/floorplan search only when structured filters weren't used
     if (!hasStructured) {
       const commCond = makeLike(['CommunityName', 'City', 'State'], keywords)
+      const commKwCount = runQuery(
+        `SET NOCOUNT ON; SELECT CAST(COUNT(*) AS nvarchar) FROM Admin_tblCommunities WHERE PortalID = 38 AND (${commCond})`
+      )
       const communities = runQuery(
         `SET NOCOUNT ON; SELECT TOP 5 CAST(
           CommunityName + ', ' + ISNULL(City,'') + ', ' + ISNULL(State,'') +
           ' | Price: $' + CAST(ISNULL(MinPrice,0) AS nvarchar) + '-$' + CAST(ISNULL(MaxPrice,0) AS nvarchar)
         AS nvarchar(300)) FROM Admin_tblCommunities WHERE PortalID = 38 AND (${commCond})`
       )
-      if (communities) contexts.push(`Ken Harvey Communities:\n${communities}`)
+      if (communities) {
+        const total = commKwCount ? `${commKwCount} total` : ''
+        contexts.push(`Ken Harvey Communities (${total}):\n${communities}`)
+      }
 
-      const fpCond = makeLike(['FloorplanName', 'Style', 'Features'], keywords)
+      // 'Features' is not a column — only search FloorplanName and Style
+      const fpCond = makeLike(['FloorplanName', 'Style'], keywords)
+      const fpKwCount = runQuery(
+        `SET NOCOUNT ON; SELECT CAST(COUNT(*) AS nvarchar) FROM Admin_tblFloorplans WHERE PortalID = 38 AND (${fpCond})`
+      )
       const floorplans = runQuery(
         `SET NOCOUNT ON; SELECT TOP 5 CAST(
           FloorplanName + ' | ' + ISNULL(Style,'') +
@@ -325,7 +339,49 @@ export async function getRelevantContext(currentText, contextText = currentText)
           ${FP_FEATURE_COLS}
         AS nvarchar(400)) FROM Admin_tblFloorplans WHERE PortalID = 38 AND (${fpCond})`
       )
-      if (floorplans) contexts.push(`Ken Harvey Floor Plans:\n${floorplans}`)
+      if (floorplans) {
+        const total = fpKwCount ? `${fpKwCount} total` : ''
+        contexts.push(`Ken Harvey Floor Plans (${total}):\n${floorplans}`)
+      }
+    }
+  }
+
+  // ---- Generic browse: user asked about floor plans or communities with no other filters ----
+  // Fills the gap when hasStructured is false and keyword LIKE returned nothing.
+  if (browseFloorPlans && !contexts.some(c => c.includes('Floor Plan'))) {
+    const fpBrowseCount = runQuery(
+      `SET NOCOUNT ON; SELECT CAST(COUNT(*) AS nvarchar) FROM Admin_tblFloorplans WHERE PortalID = 38`
+    )
+    const fpBrowseRows = runQuery(
+      `SET NOCOUNT ON; SELECT TOP 5 CAST(
+        FloorplanName +
+        ' | Beds: ' + CAST(ISNULL(MinBedrooms,0) AS nvarchar) +
+          CASE WHEN MaxBedrooms > 0 THEN '-' + CAST(MaxBedrooms AS nvarchar) ELSE '+' END +
+        ' | Baths: ' + CAST(ISNULL(MinBaths,0) AS nvarchar) +
+        ' | SqFt: ' + CAST(ISNULL(MinSquareFeet,0) AS nvarchar) + '-' + CAST(ISNULL(MaxSquareFeet,0) AS nvarchar) +
+        ${FP_FEATURE_COLS}
+      AS nvarchar(400)) FROM Admin_tblFloorplans WHERE PortalID = 38 ORDER BY MinBedrooms, MinPrice`
+    )
+    if (fpBrowseRows) {
+      const total = fpBrowseCount ? `${fpBrowseCount} total` : ''
+      contexts.push(`Ken Harvey Floor Plans (${total} — sample of 5 shown):\n${fpBrowseRows}`)
+    }
+  }
+
+  if (browseCommunities && !contexts.some(c => c.includes('Communities'))) {
+    const commBrowseCount = runQuery(
+      `SET NOCOUNT ON; SELECT CAST(COUNT(*) AS nvarchar) FROM Admin_tblCommunities WHERE PortalID = 38`
+    )
+    const commBrowseRows = runQuery(
+      `SET NOCOUNT ON; SELECT TOP 5 CAST(
+        CommunityName + ' (' + ISNULL(City,'') + ', ' + ISNULL(State,'NC') + ')' +
+        CASE WHEN MinPrice > 0 THEN ' | From $' + CAST(MinPrice AS nvarchar) ELSE ' | Pricing TBD' END +
+        CASE WHEN MaxPrice > 0 THEN ' to $' + CAST(MaxPrice AS nvarchar) ELSE '' END
+      AS nvarchar(300)) FROM Admin_tblCommunities WHERE PortalID = 38 ORDER BY City`
+    )
+    if (commBrowseRows) {
+      const total = commBrowseCount ? `${commBrowseCount} total` : ''
+      contexts.push(`Ken Harvey Communities (${total} — sample of 5 shown):\n${commBrowseRows}`)
     }
   }
 

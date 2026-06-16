@@ -30,16 +30,16 @@ There are no tests or linting scripts configured beyond `next lint`.
 
 **Chat data flow:**
 1. `AIChatWidget` (client component) sends full message history + `sessionId` to `POST /api/chat`
-2. `src/app/api/chat/route.js` calls `getRelevantContext()` from `src/lib/db.js` using the last 3 user messages combined (for follow-up context inheritance)
+2. `src/app/api/chat/route.js` calls `getRelevantContext(currentText, recentText)` from `src/lib/db.js`. `currentText` is the latest message only; `recentText` is the last 3 messages combined. City/location is always parsed from `currentText` so a new city in the current message overrides prior context. Price, bedroom count, and floor plan features are parsed from `recentText` to inherit those filters across follow-up turns.
 3. DB context (if found) is injected into Claude's system prompt as Ken Harvey Homes data; Claude also has the `web_search_20260209` server-side tool
 4. If `stop_reason === 'pause_turn'` (web search hit iteration limit), the route re-sends to continue
-5. Response text blocks are concatenated and returned as `{ reply }`
-6. Each exchange is appended to `chat-logs/{sessionId}.md` for testing reference
+5. Response text blocks are joined with `' '` (a space) and returned as `{ reply }` — joining without a separator produces run-together sentences when Claude returns multiple blocks
+6. Each exchange is appended to `chat-logs/{sessionId}.md` for testing reference; `chat-logs/` is in `.gitignore` so logs stay local
 
-**Database context (`src/lib/db.js`):** Queries two SQL Server Express databases via `spawnSync('sqlcmd', [...])` — no npm driver needed. Windows Authentication (no credentials in code). The `runQuery(sql, db)` function accepts a `db` parameter defaulting to `'WinStarHomes'`. `getRelevantContext(question)` runs two strategies:
+**Database context (`src/lib/db.js`):** Queries two SQL Server Express databases via `spawnSync('sqlcmd', [...])` — no npm driver needed. Windows Authentication (no credentials in code). The `runQuery(sql, db)` function accepts a `db` parameter defaulting to `'WinStarHomes'`. `getRelevantContext(currentText, contextText)` runs two strategies:
 
-- **Structured:** Parses `maxPrice`, `minBeds`, city mentions, and floor plan features from the question via regex, then queries structured filters against all relevant tables. IDXPlus listings are always queried first.
-- **Keyword LIKE:** Extracts content keywords (stop words removed) and runs `LOWER(col) LIKE '%kw%'` against FAQs, communities, and floor plans. Only runs when no structured filters were detected.
+- **Structured:** Parses `maxPrice`, `minBeds`, city mentions, and floor plan features via regex, then queries structured filters against all relevant tables. IDXPlus listings are always queried first. `parseMinBeds` normalises written-out numbers ("three" → 3) before applying digit regex, so "at least three bedrooms" works the same as "at least 3 bedrooms".
+- **Keyword LIKE:** Extracts content keywords (stop words removed) and runs `LOWER(col) LIKE '%kw%'` against FAQs, communities, and floor plans. Only runs when no structured filters were detected. `'ken'` and `'harvey'` are in the stop words list — they are builder-name words, not content keywords, and would otherwise false-match community/city names like "Kenlan Farms" or "Kenly".
 
 ## Databases
 
@@ -57,8 +57,8 @@ Primary source for **individual home listings**.
 Source for **communities, floor plans, and FAQs**.
 
 - `Admin_tblFAQs` — 13 rows, all Ken Harvey (`portalid = 38`). Columns are lowercase: `question`, `answer`, `portalid`. Always filter `WHERE portalid = 38`.
-- `Admin_tblCommunities` — 457 rows. `CommunityName`, `City`, `State` (nullable), `MinPrice`, `MaxPrice`.
-- `Admin_tblFloorplans` — 576 rows. `FloorplanName`, `MinBedrooms`, `MaxBedrooms`, `MinBaths`, `MaxBaths`, `MinSquareFeet`, `MaxSquareFeet`, `MinPrice`, `MaxPrice`, `Style`, `FirstFloorMaster` (int 0/1), `BonusRoom` (varchar 'Yes'/'No'/'Optional'), `Study` (int), `Basement` (int). **`CommunityID` is 0 for all rows** — floor plans cannot be JOINed to communities.
+- `Admin_tblCommunities` — 457 rows from 29 builders. **Always filter `WHERE PortalID = 38`** — Ken Harvey has 22 communities. Columns: `CommunityName`, `City`, `State` (nullable), `MinPrice`, `MaxPrice`, `PortalID`.
+- `Admin_tblFloorplans` — 576 rows from 16 builders. **Always filter `WHERE PortalID = 38`** — Ken Harvey has 54 floor plans. Columns: `FloorplanName`, `MinBedrooms`, `MaxBedrooms`, `MinBaths`, `MaxBaths`, `MinSquareFeet`, `MaxSquareFeet`, `MinPrice`, `MaxPrice`, `Style`, `FirstFloorMaster` (int 0/1), `BonusRoom` (varchar 'Yes'/'No'/'Optional'), `Study` (int), `Basement` (int), `PortalID`. **`CommunityID` is 0 for all rows** — floor plans cannot be JOINed to communities.
 - `Admin_tblInventory` — not queried. Data is too incomplete (sparse city coverage, NULL community/floorplan links). IDXPlus replaced it.
 
 ## sqlcmd quirks

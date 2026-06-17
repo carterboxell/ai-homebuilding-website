@@ -22,6 +22,20 @@ npm start          # serve the production build
 
 There are no tests or linting scripts configured beyond `next lint`.
 
+## After Making Changes
+
+After every code change, restart the server so the user can test immediately:
+
+```powershell
+$env:Path += ";C:\Program Files\nodejs"
+Stop-Process -Name "node" -Force -ErrorAction SilentlyContinue
+Set-Location "C:\ClaudeCodeTest\ai-homebuilding-website"
+npm run build
+Start-Process -NoNewWindow -FilePath "node" -ArgumentList "node_modules/next/dist/bin/next","start"
+```
+
+Wait for "Ready" to appear in output before reporting done. The server runs at http://localhost:3000.
+
 ## Architecture
 
 **Stack:** Next.js 14 (App Router, JSX, `src/` layout) + Tailwind CSS + `@anthropic-ai/sdk`
@@ -113,7 +127,32 @@ Claude offers contact collection **at most once per session** (enforced in syste
 
 **`.gitignore`** — Add `leads/`.
 
+### Lead record file format (`leads/{sessionId}.md`)
+
+One file per session, written when the user provides email or phone. All fields map directly to `ProspectsRevealed.admin_usermessages` columns:
+
+- `uniqueID` — the session's `crypto.randomUUID()` value
+- `PRClientID` — `fe5f5ca2-fbc0-4329-b2a9-7297f5ba0904` (Ken Harvey Homes in ProspectsRevealed)
+- `usertype` — `chatbot`
+- `ipaddress` — captured server-side from `x-forwarded-for` / `x-real-ip` headers
+- `email` / `phone` — extracted from user message via regex
+- `message` — the chat log filename (`{sessionId}.md`), not the chat content
+- `URL` — `https://kenharveyhomes.com`
+
+### Importing leads into the database
+
+```powershell
+node scripts/import-leads.js
+```
+
+Upserts all files in `leads/` into `ProspectsRevealed.admin_usermessages`, then moves each imported file to `leads/imported/`. Safe to re-run — already-imported files are not re-processed.
+
+**Prerequisite (one-time, run in SSMS):**
+```sql
+ALTER TABLE admin_usermessages ADD phone VARCHAR(50) NULL
+```
+
 ### What's deferred
 - Email notification to Ken Harvey team (SMTP/SendGrid) — add credentials to `.env.local` when ready
 - CRM integration
-- Sales dashboard for reviewing leads (`leads/` folder is the MVP)
+- Admin dashboard — use SSMS to query `ProspectsRevealed.dbo.admin_usermessages` for now

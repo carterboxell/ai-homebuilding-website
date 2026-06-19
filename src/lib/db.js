@@ -161,6 +161,28 @@ const FP_FEATURE_COLS = `
   CASE WHEN Study = 1 THEN ' | Study' ELSE '' END +
   CASE WHEN Basement = 1 THEN ' | Basement' ELSE '' END`
 
+// Base WHERE conditions shared by all community queries
+const COMM_BASE = "PortalID = 38 AND Publish = 1 AND PresaleAvail = 1"
+
+// URL builders (SQL expressions)
+// All KHH communities: MarketID=29, MarketName=Raleigh, MarketState=NC
+const COMM_URL = `
+  ' | URL: https://kenharveyhomes.com/Neighborhood/Raleigh-NC/' +
+  REPLACE(ISNULL(City,''), ' ', '-') + '-NC/cid/' +
+  CAST(CommunityID AS nvarchar) + '/' +
+  REPLACE(CommunityName, ' ', '-') + '-Homes-For-Sale'`
+
+const FP_URL = `
+  ' | URL: https://kenharveyhomes.com/Find-Your-Home/New-Floor-Plans/Floorplan-Details/id/' +
+  CAST(FloorplanID AS nvarchar)`
+
+// For IDXPlus listings: CommunityNameEncoded column already exists in the view
+const LISTING_URL = `
+  ' | URL: https://kenharveyhomes.com/Find-Your-Home/Available-Homes/Details/MLS/' +
+  CAST(MLS AS nvarchar) + '/' +
+  REPLACE(ISNULL(City,''), ' ', '-') + '/Real-Estate/' +
+  CommunityNameEncoded + '-Homes'`
+
 export async function getRelevantContext(currentText, contextText = currentText) {
   const keywords = extractKeywords(currentText)
   const maxPrice = parseMaxPrice(contextText)   // inherit price from prior turns
@@ -216,8 +238,9 @@ export async function getRelevantContext(currentText, contextText = currentText)
           CASE WHEN CommunityName IS NOT NULL THEN ' | ' + CommunityName ELSE '' END +
           ' | Status: ' + Status +
           CASE WHEN CompletionDate < '2100-01-01' THEN ' | Est. completion: ' + CONVERT(nvarchar,CompletionDate,101) ELSE '' END +
-          CASE WHEN SchoolElem IS NOT NULL THEN ' | Schools: ' + SchoolElem + ' / ' + ISNULL(SchoolJunior,'') + ' / ' + ISNULL(SchoolHigh,'') ELSE '' END
-        AS nvarchar(500))
+          CASE WHEN SchoolElem IS NOT NULL THEN ' | Schools: ' + SchoolElem + ' / ' + ISNULL(SchoolJunior,'') + ' / ' + ISNULL(SchoolHigh,'') ELSE '' END +
+          ${LISTING_URL}
+        AS nvarchar(700))
         FROM vwBuilderProperties_TABLE ${invWhere} ORDER BY Price`,
         'IDXPlus'
       )
@@ -239,7 +262,7 @@ export async function getRelevantContext(currentText, contextText = currentText)
     // Communities: city + price filter
     if (cityMatch || maxPrice) {
       const commWhereParts = [
-        'PortalID = 38',
+        COMM_BASE,
         cityIn,
         maxPrice ? `(MinPrice <= ${maxPrice} OR MinPrice IS NULL OR MinPrice = 0)` : null
       ].filter(Boolean)
@@ -252,8 +275,9 @@ export async function getRelevantContext(currentText, contextText = currentText)
         `SET NOCOUNT ON; SELECT TOP 10 CAST(
           CommunityName + ' (' + ISNULL(City,'') + ', ' + ISNULL(State,'NC') + ')' +
           ' | From $' + CAST(ISNULL(MinPrice,0) AS nvarchar) +
-          CASE WHEN MaxPrice > 0 THEN ' to $' + CAST(MaxPrice AS nvarchar) ELSE '' END
-        AS nvarchar(300))
+          CASE WHEN MaxPrice > 0 THEN ' to $' + CAST(MaxPrice AS nvarchar) ELSE '' END +
+          ${COMM_URL}
+        AS nvarchar(500))
         FROM Admin_tblCommunities ${commWhere} ORDER BY MinPrice`
       )
 
@@ -287,15 +311,17 @@ export async function getRelevantContext(currentText, contextText = currentText)
         ' | Baths: ' + CAST(ISNULL(MinBaths,0) AS nvarchar) +
         ' | SqFt: ' + CAST(ISNULL(MinSquareFeet,0) AS nvarchar) + '-' + CAST(ISNULL(MaxSquareFeet,0) AS nvarchar) +
         CASE WHEN MinPrice > 0 THEN ' | $' + CAST(MinPrice AS nvarchar) + '-$' + CAST(ISNULL(MaxPrice,0) AS nvarchar) ELSE '' END +
-        ${FP_FEATURE_COLS}
-      AS nvarchar(400))
+        ${FP_FEATURE_COLS} +
+        ${FP_URL}
+      AS nvarchar(600))
       FROM Admin_tblFloorplans ${fpWhere} ORDER BY MinBedrooms, MinPrice`
     )
 
     if (fpRows) {
+      const fpHasPrices = fpRows.includes(' | $')
       const label = [
         minBeds ? `${minBeds}+ bedrooms` : '',
-        maxPrice ? `under $${maxPrice.toLocaleString()}` : '',
+        maxPrice && fpHasPrices ? `under $${maxPrice.toLocaleString()}` : '',
         fpFeatures.length ? fpFeatures.map(f =>
           f.includes('FirstFloor') ? 'first floor master' :
           f.includes('BonusRoom')  ? 'bonus room' :
@@ -304,7 +330,10 @@ export async function getRelevantContext(currentText, contextText = currentText)
         ).join(', ') : ''
       ].filter(Boolean).join(', ')
       const total = fpCount ? `(${fpCount} floor plans total)` : ''
-      contexts.push(`Ken Harvey Floor Plans ${label} ${total}:\n${fpRows}`)
+      const priceNote = maxPrice && !fpHasPrices
+        ? ' NOTE: floor plan pricing is not yet populated in the database so the price filter had no effect — all floor plans are shown regardless of price.'
+        : ''
+      contexts.push(`Ken Harvey Floor Plans ${label} ${total}${priceNote}:\n${fpRows}`)
     }
   }
 
@@ -320,13 +349,14 @@ export async function getRelevantContext(currentText, contextText = currentText)
     if (!hasStructured) {
       const commCond = makeLike(['CommunityName', 'City', 'State'], keywords)
       const commKwCount = runQuery(
-        `SET NOCOUNT ON; SELECT CAST(COUNT(*) AS nvarchar) FROM Admin_tblCommunities WHERE PortalID = 38 AND (${commCond})`
+        `SET NOCOUNT ON; SELECT CAST(COUNT(*) AS nvarchar) FROM Admin_tblCommunities WHERE ${COMM_BASE} AND (${commCond})`
       )
       const communities = runQuery(
         `SET NOCOUNT ON; SELECT TOP 5 CAST(
           CommunityName + ', ' + ISNULL(City,'') + ', ' + ISNULL(State,'') +
-          ' | Price: $' + CAST(ISNULL(MinPrice,0) AS nvarchar) + '-$' + CAST(ISNULL(MaxPrice,0) AS nvarchar)
-        AS nvarchar(300)) FROM Admin_tblCommunities WHERE PortalID = 38 AND (${commCond})`
+          ' | Price: $' + CAST(ISNULL(MinPrice,0) AS nvarchar) + '-$' + CAST(ISNULL(MaxPrice,0) AS nvarchar) +
+          ${COMM_URL}
+        AS nvarchar(500)) FROM Admin_tblCommunities WHERE ${COMM_BASE} AND (${commCond})`
       )
       if (communities) {
         const total = commKwCount ? `${commKwCount} total` : ''
@@ -343,12 +373,16 @@ export async function getRelevantContext(currentText, contextText = currentText)
           FloorplanName + ' | ' + ISNULL(Style,'') +
           ' | Beds: ' + CAST(ISNULL(MinBedrooms,0) AS nvarchar) +
           ' | SqFt: ' + CAST(ISNULL(MinSquareFeet,0) AS nvarchar) + '-' + CAST(ISNULL(MaxSquareFeet,0) AS nvarchar) +
-          ${FP_FEATURE_COLS}
-        AS nvarchar(400)) FROM Admin_tblFloorplans WHERE PortalID = 38 AND (${fpCond})`
+          ${FP_FEATURE_COLS} +
+          ${FP_URL}
+        AS nvarchar(600)) FROM Admin_tblFloorplans WHERE PortalID = 38 AND (${fpCond})`
       )
       if (floorplans) {
         const total = fpKwCount ? `${fpKwCount} total` : ''
-        contexts.push(`Ken Harvey Floor Plans (${total}):\n${floorplans}`)
+        const kwPriceNote = maxPrice && !floorplans.includes(' | $')
+          ? ' NOTE: floor plan pricing is not yet populated in the database so the price filter had no effect.'
+          : ''
+        contexts.push(`Ken Harvey Floor Plans (${total})${kwPriceNote}:\n${floorplans}`)
       }
     }
   }
@@ -366,25 +400,30 @@ export async function getRelevantContext(currentText, contextText = currentText)
           CASE WHEN MaxBedrooms > 0 THEN '-' + CAST(MaxBedrooms AS nvarchar) ELSE '+' END +
         ' | Baths: ' + CAST(ISNULL(MinBaths,0) AS nvarchar) +
         ' | SqFt: ' + CAST(ISNULL(MinSquareFeet,0) AS nvarchar) + '-' + CAST(ISNULL(MaxSquareFeet,0) AS nvarchar) +
-        ${FP_FEATURE_COLS}
-      AS nvarchar(400)) FROM Admin_tblFloorplans WHERE PortalID = 38 ORDER BY MinBedrooms, MinPrice`
+        ${FP_FEATURE_COLS} +
+        ${FP_URL}
+      AS nvarchar(600)) FROM Admin_tblFloorplans WHERE PortalID = 38 ORDER BY MinBedrooms, MinPrice`
     )
     if (fpBrowseRows) {
       const total = fpBrowseCount ? `${fpBrowseCount} total` : ''
-      contexts.push(`Ken Harvey Floor Plans (${total} — sample of 5 shown):\n${fpBrowseRows}`)
+      const browsePriceNote = maxPrice && !fpBrowseRows.includes(' | $')
+        ? ' NOTE: floor plan pricing is not yet populated in the database so the price filter had no effect.'
+        : ''
+      contexts.push(`Ken Harvey Floor Plans (${total} — sample of 5 shown)${browsePriceNote}:\n${fpBrowseRows}`)
     }
   }
 
   if (browseCommunities && !contexts.some(c => c.includes('Communities'))) {
     const commBrowseCount = runQuery(
-      `SET NOCOUNT ON; SELECT CAST(COUNT(*) AS nvarchar) FROM Admin_tblCommunities WHERE PortalID = 38`
+      `SET NOCOUNT ON; SELECT CAST(COUNT(*) AS nvarchar) FROM Admin_tblCommunities WHERE ${COMM_BASE}`
     )
     const commBrowseRows = runQuery(
       `SET NOCOUNT ON; SELECT TOP 5 CAST(
         CommunityName + ' (' + ISNULL(City,'') + ', ' + ISNULL(State,'NC') + ')' +
         CASE WHEN MinPrice > 0 THEN ' | From $' + CAST(MinPrice AS nvarchar) ELSE ' | Pricing TBD' END +
-        CASE WHEN MaxPrice > 0 THEN ' to $' + CAST(MaxPrice AS nvarchar) ELSE '' END
-      AS nvarchar(300)) FROM Admin_tblCommunities WHERE PortalID = 38 ORDER BY City`
+        CASE WHEN MaxPrice > 0 THEN ' to $' + CAST(MaxPrice AS nvarchar) ELSE '' END +
+        ${COMM_URL}
+      AS nvarchar(500)) FROM Admin_tblCommunities WHERE ${COMM_BASE} ORDER BY City`
     )
     if (commBrowseRows) {
       const total = commBrowseCount ? `${commBrowseCount} total` : ''
@@ -406,8 +445,9 @@ export async function getRelevantContext(currentText, contextText = currentText)
         ' | ' + CAST(ISNULL(Bedrooms,0) AS nvarchar) + ' bed / ' + CAST(ISNULL(Bathrooms,0) AS nvarchar) + ' bath' +
         CASE WHEN SquareFeet > 0 THEN ' / ' + CAST(SquareFeet AS nvarchar) + ' sqft' ELSE '' END +
         CASE WHEN CommunityName IS NOT NULL THEN ' | ' + CommunityName ELSE '' END +
-        ' | Status: ' + Status
-      AS nvarchar(500)) FROM vwBuilderProperties_TABLE WHERE Status IN ('ACT','PEND','Coming Soon') ORDER BY Price`,
+        ' | Status: ' + Status +
+        ${LISTING_URL}
+      AS nvarchar(700)) FROM vwBuilderProperties_TABLE WHERE Status IN ('ACT','PEND','Coming Soon') ORDER BY Price`,
       'IDXPlus'
     )
     if (listBrowseRows) {

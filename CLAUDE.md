@@ -24,17 +24,24 @@ There are no tests or linting scripts configured beyond `next lint`.
 
 ## After Making Changes
 
-After every code change, restart the server so the user can test immediately:
+After every code change, rebuild and restart. The server runs on port **3001** when paired with the DNN test site:
 
 ```powershell
 $env:Path += ";C:\Program Files\nodejs"
 Stop-Process -Name "node" -Force -ErrorAction SilentlyContinue
 Set-Location "C:\ClaudeCodeTest\ai-homebuilding-website"
 npm run build
-Start-Process -NoNewWindow -FilePath "node" -ArgumentList "node_modules/next/dist/bin/next","start"
+Start-Process -NoNewWindow -FilePath "node" -ArgumentList "node_modules/next/dist/bin/next","start","-p","3001" -RedirectStandardOutput "logs\stdout.log" -RedirectStandardError "logs\stderr.log"
 ```
 
-Wait for "Ready" to appear in output before reporting done. The server runs at http://localhost:3000.
+Verify with: `Invoke-WebRequest http://localhost:3001 -UseBasicParsing` → 200.
+
+## DNN Integration (test.kenharveyhomes.com)
+
+The Next.js app is not accessed directly by users — it runs as a backend service on port 3001. The user-facing widget lives in the DNN Aperture skin:
+
+- **ASHX proxy**: `C:\DNN_Platform_10.2.2_Install\ai-chat.ashx` — forwards browser POSTs from DNN to `http://localhost:3001/api/chat`. Same-origin to the browser, so no CORS. All buttons must have `type="button"` and no `<form>` tags — DNN wraps every page in `<form runat="server">` which captures submits.
+- **Widget**: Appended to `C:\DNN_Platform_10.2.2_Install\Portals\_default\Skins\Aperture\default.ascx`. Pure static HTML/CSS/vanilla JS — **never use `<%= %>`, `<%: %>`, or `<%# %>` render blocks** in this file, they crash DNN with "Controls collection cannot be modified". The widget's `renderMessage()` function HTML-escapes text, converts `\n` to `<br>`, and converts `[text](url)` markdown links to `<a target="_blank">` tags.
 
 ## Architecture
 
@@ -61,7 +68,7 @@ Wait for "Ready" to appear in output before reporting done. The server runs at h
 Primary source for **individual home listings**.
 
 - `vwBuilderProperties_TABLE` — 134 rows, all Ken Harvey. Active statuses: `'ACT'`, `'PEND'`, `'Coming Soon'` (32 listings). Exclude `'Closed'` (102 rows).
-  - Key columns: `Address`, `City`, `State`, `Price`, `Bedrooms`, `Bathrooms`, `SquareFeet`, `CommunityName`, `Status`, `CompletionDate`, `SchoolElem`, `SchoolJunior`, `SchoolHigh`
+  - Key columns: `Address`, `City`, `State`, `Price`, `Bedrooms`, `Bathrooms`, `SquareFeet`, `CommunityName`, `CommunityNameEncoded`, `MLS`, `Status`, `CompletionDate`, `SchoolElem`, `SchoolJunior`, `SchoolHigh`
   - `CompletionDate = '2199-12-31'` is a placeholder meaning "TBD" — skip in output when `>= '2100-01-01'`
   - Active listing cities: Raleigh (10), Youngsville (9), Louisburg (7), Selma (3), Wendell (2), Durham (1)
 - `vwResidentialSearch_TABLE` — 139 Ken Harvey rows, 170 columns. Not currently queried (too wide; `vwBuilderProperties_TABLE` is sufficient).
@@ -71,8 +78,8 @@ Primary source for **individual home listings**.
 Source for **communities, floor plans, and FAQs**.
 
 - `Admin_tblFAQs` — 13 rows, all Ken Harvey (`portalid = 38`). Columns are lowercase: `question`, `answer`, `portalid`. Always filter `WHERE portalid = 38`.
-- `Admin_tblCommunities` — 457 rows from 29 builders. **Always filter `WHERE PortalID = 38`** — Ken Harvey has 22 communities. Columns: `CommunityName`, `City`, `State` (nullable), `MinPrice`, `MaxPrice`, `PortalID`.
-- `Admin_tblFloorplans` — 576 rows from 16 builders. **Always filter `WHERE PortalID = 38`** — Ken Harvey has 54 floor plans. Columns: `FloorplanName`, `MinBedrooms`, `MaxBedrooms`, `MinBaths`, `MaxBaths`, `MinSquareFeet`, `MaxSquareFeet`, `MinPrice`, `MaxPrice`, `Style`, `FirstFloorMaster` (int 0/1), `BonusRoom` (varchar 'Yes'/'No'/'Optional'), `Study` (int), `Basement` (int), `PortalID`. **`CommunityID` is 0 for all rows** — floor plans cannot be JOINed to communities.
+- `Admin_tblCommunities` — 457 rows from 29 builders. **Always filter using `COMM_BASE`** (defined in `db.js`): `PortalID = 38 AND Publish = 1 AND PresaleAvail = 1` — Ken Harvey has 22 total but only **17 published/presale-available** communities should be shown to users. Never show unpublished or presale=0 communities (e.g. `*NEW COMMUNITY`, `Bellingham`, `River Manor`, `Meadows of Banks`, `Waterstone`). Columns: `CommunityName`, `City`, `State` (nullable), `MinPrice`, `MaxPrice`, `PortalID`, `Publish` (bit), `PresaleAvail` (bit), `CommunityID`.
+- `Admin_tblFloorplans` — 576 rows from 16 builders. **Always filter `WHERE PortalID = 38`** — Ken Harvey has 54 floor plans. Columns: `FloorplanName`, `MinBedrooms`, `MaxBedrooms`, `MinBaths`, `MaxBaths`, `MinSquareFeet`, `MaxSquareFeet`, `MinPrice`, `MaxPrice`, `Style`, `FirstFloorMaster` (int 0/1), `BonusRoom` (varchar 'Yes'/'No'/'Optional'), `Study` (int), `Basement` (int), `PortalID`, `FloorplanID`. **`MinPrice = 0` for all 54 KHH floor plans** — price data is not populated. When a user asks to filter floor plans by price, `db.js` detects this (no `| $` in results) and appends a NOTE to the context so Claude can acknowledge the limitation. **`CommunityID` is 0 for all rows** — floor plans cannot be JOINed to communities.
 - `Admin_tblInventory` — not queried. Data is too incomplete (sparse city coverage, NULL community/floorplan links). IDXPlus replaced it.
 
 ## sqlcmd quirks
@@ -87,7 +94,19 @@ Source for **communities, floor plans, and FAQs**.
 - Shared client in `src/lib/claude.js` (exported as `client`).
 - Model: `claude-sonnet-4-6`.
 - Web search: server-side tool `{ type: 'web_search_20260209', name: 'web_search' }`. Claude executes automatically — no client-side tool loop needed. Handle `stop_reason === 'pause_turn'` by re-sending with the assistant turn appended.
-- System prompt identifies Claude as "the AI assistant for Ken Harvey Homes". Format rules prohibit tables, pipes, horizontal rules, blockquotes, and emojis.
+- System prompt identifies Claude as "the AI assistant for Ken Harvey Homes". Format rules prohibit tables, pipes, horizontal rules, blockquotes, and emojis. Claude is instructed to format floor plans, communities, and listings as markdown links `[Name](url)` when a URL is present in the database context (marked as `URL: https://...`). The DNN widget's `renderMessage()` renders these as clickable `<a target="_blank">` tags.
+
+## URL Patterns (kenharveyhomes.com)
+
+URLs are pre-built in SQL inside `db.js` and appended to each row as `| URL: https://kenharveyhomes.com/...`. All communities use `MarketID=29` (Raleigh, NC).
+
+| Type | Pattern |
+|------|---------|
+| Floor plan | `/Find-Your-Home/New-Floor-Plans/Floorplan-Details/id/{FloorplanID}` |
+| Community | `/Neighborhood/Raleigh-NC/{REPLACE(City,' ','-')}-NC/cid/{CommunityID}/{REPLACE(CommunityName,' ','-')}-Homes-For-Sale` |
+| Listing | `/Find-Your-Home/Available-Homes/Details/MLS/{MLS}/{REPLACE(City,' ','-')}/Real-Estate/{CommunityNameEncoded}-Homes` |
+
+`CommunityNameEncoded` for listings comes directly from `vwBuilderProperties_TABLE`. Community and floor plan names use `REPLACE(name, ' ', '-')` in SQL.
 
 ## Environment
 

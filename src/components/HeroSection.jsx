@@ -11,16 +11,10 @@ export default function HeroSection() {
       </p>
       <div className="flex gap-4 justify-center flex-wrap">
         <a
-          href="#floor-plans"
+          href="#chat"
           className="bg-amber-500 hover:bg-amber-400 text-white font-semibold px-8 py-3 rounded-lg transition"
         >
-          Explore Floor Plans
-        </a>
-        <a
-          href="#estimator"
-          className="border border-white hover:bg-white hover:text-slate-900 font-semibold px-8 py-3 rounded-lg transition"
-        >
-          Get a Cost Estimate
+          Chat with Our AI Assistant
         </a>
       </div>
     </section>

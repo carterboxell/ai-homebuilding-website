@@ -93,7 +93,8 @@ export async function POST(req) {
 - When showing floor plans or specific listings and the user seems interested, end your response with a natural offer to have the team follow up: for example, "If you'd like, drop your email address below and I'll have our team send you these details directly."
 - When no listings match the user's criteria, offer a notification: for example, "Want to be notified when something matching your search becomes available? Just leave your email below."
 - When the user asks about touring, financing, next steps, or building timelines, offer a call: for example, "Want a quick call with our team to talk through your options? Just leave your phone number or email below."
-- When the user provides an email address or phone number, confirm it warmly and do not ask for contact info again.`
+- When the user provides an email address or phone number, confirm it warmly and do not ask for contact info again.
+- The database context includes a URL for each floor plan, community, and home listing (marked as "URL: https://..."). When you mention a specific floor plan, community, or home by name, format it as a markdown link using that URL: [Name](url). Use the exact URL from the context — do not guess or construct URLs yourself.`
 
   const firstMessageInstruction = `
 

@@ -2,16 +2,6 @@
 
 const features = [
   {
-    icon: '🏠',
-    title: 'AI Floor Plan Advisor',
-    description: 'Answer a few questions about your lifestyle and get personalized floor plan recommendations.',
-  },
-  {
-    icon: '💰',
-    title: 'Smart Cost Estimator',
-    description: 'Get a real-time AI cost estimate based on square footage, location, and finish level.',
-  },
-  {
     icon: '🎨',
     title: 'Material & Finish Advisor',
     description: 'Describe your style and receive curated material palettes that match your vision.',

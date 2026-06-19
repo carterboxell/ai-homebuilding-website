@@ -393,6 +393,7 @@ export async function getRelevantContext(currentText, contextText = currentText)
     const fpBrowseCount = runQuery(
       `SET NOCOUNT ON; SELECT CAST(COUNT(*) AS nvarchar) FROM Admin_tblFloorplans WHERE PortalID = 38`
     )
+    // Default to higher-end floor plans (2500+ sqft) when no filters specified
     const fpBrowseRows = runQuery(
       `SET NOCOUNT ON; SELECT TOP 5 CAST(
         FloorplanName +
@@ -402,7 +403,7 @@ export async function getRelevantContext(currentText, contextText = currentText)
         ' | SqFt: ' + CAST(ISNULL(MinSquareFeet,0) AS nvarchar) + '-' + CAST(ISNULL(MaxSquareFeet,0) AS nvarchar) +
         ${FP_FEATURE_COLS} +
         ${FP_URL}
-      AS nvarchar(600)) FROM Admin_tblFloorplans WHERE PortalID = 38 ORDER BY MinBedrooms, MinPrice`
+      AS nvarchar(600)) FROM Admin_tblFloorplans WHERE PortalID = 38 AND ISNULL(MaxSquareFeet,0) >= 2500 ORDER BY MaxSquareFeet DESC, MinSquareFeet DESC`
     )
     if (fpBrowseRows) {
       const total = fpBrowseCount ? `${fpBrowseCount} total` : ''
@@ -417,13 +418,14 @@ export async function getRelevantContext(currentText, contextText = currentText)
     const commBrowseCount = runQuery(
       `SET NOCOUNT ON; SELECT CAST(COUNT(*) AS nvarchar) FROM Admin_tblCommunities WHERE ${COMM_BASE}`
     )
+    // Default to higher-end communities ($500k+) when no filters specified
     const commBrowseRows = runQuery(
       `SET NOCOUNT ON; SELECT TOP 5 CAST(
         CommunityName + ' (' + ISNULL(City,'') + ', ' + ISNULL(State,'NC') + ')' +
         CASE WHEN MinPrice > 0 THEN ' | From $' + CAST(MinPrice AS nvarchar) ELSE ' | Pricing TBD' END +
         CASE WHEN MaxPrice > 0 THEN ' to $' + CAST(MaxPrice AS nvarchar) ELSE '' END +
         ${COMM_URL}
-      AS nvarchar(500)) FROM Admin_tblCommunities WHERE ${COMM_BASE} ORDER BY City`
+      AS nvarchar(500)) FROM Admin_tblCommunities WHERE ${COMM_BASE} AND ISNULL(MinPrice,0) >= 500000 ORDER BY MinPrice DESC`
     )
     if (commBrowseRows) {
       const total = commBrowseCount ? `${commBrowseCount} total` : ''
@@ -436,6 +438,7 @@ export async function getRelevantContext(currentText, contextText = currentText)
       `SET NOCOUNT ON; SELECT CAST(COUNT(*) AS nvarchar) FROM vwBuilderProperties_TABLE WHERE Status IN ('ACT','PEND','Coming Soon')`,
       'IDXPlus'
     )
+    // Default to higher-end listings ($500k+) when no filters specified
     const listBrowseRows = runQuery(
       `SET NOCOUNT ON; SELECT TOP 5 CAST(
         ISNULL(Address,'TBD') +
@@ -447,7 +450,7 @@ export async function getRelevantContext(currentText, contextText = currentText)
         CASE WHEN CommunityName IS NOT NULL THEN ' | ' + CommunityName ELSE '' END +
         ' | Status: ' + Status +
         ${LISTING_URL}
-      AS nvarchar(700)) FROM vwBuilderProperties_TABLE WHERE Status IN ('ACT','PEND','Coming Soon') ORDER BY Price`,
+      AS nvarchar(700)) FROM vwBuilderProperties_TABLE WHERE Status IN ('ACT','PEND','Coming Soon') AND Price >= 500000 ORDER BY Price DESC`,
       'IDXPlus'
     )
     if (listBrowseRows) {

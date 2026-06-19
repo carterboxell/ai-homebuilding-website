@@ -41,7 +41,13 @@ Verify with: `Invoke-WebRequest http://localhost:3001 -UseBasicParsing` → 200.
 The Next.js app is not accessed directly by users — it runs as a backend service on port 3001. The user-facing widget lives in the DNN Aperture skin:
 
 - **ASHX proxy**: `C:\DNN_Platform_10.2.2_Install\ai-chat.ashx` — forwards browser POSTs from DNN to `http://localhost:3001/api/chat`. Same-origin to the browser, so no CORS. All buttons must have `type="button"` and no `<form>` tags — DNN wraps every page in `<form runat="server">` which captures submits.
-- **Widget**: Appended to `C:\DNN_Platform_10.2.2_Install\Portals\_default\Skins\Aperture\default.ascx`. Pure static HTML/CSS/vanilla JS — **never use `<%= %>`, `<%: %>`, or `<%# %>` render blocks** in this file, they crash DNN with "Controls collection cannot be modified". The widget's `renderMessage()` function HTML-escapes text, converts `\n` to `<br>`, and converts `[text](url)` markdown links to `<a target="_blank">` tags.
+- **Widget**: Appended to `C:\DNN_Platform_10.2.2_Install\Portals\_default\Skins\Aperture\default.ascx`. Pure static HTML/CSS/vanilla JS — **never use `<%= %>`, `<%: %>`, or `<%# %>` render blocks** in this file, they crash DNN with "Controls collection cannot be modified". Key widget details:
+  - Panel header title: "Your AI Assistant"
+  - Tab slides in with text "Ask our AI about Ken Harvey Homes"; hides entirely (`display:none`) when panel is open
+  - Panel animates open/close with `transform: translateY(100%)` → `translateY(0)` over 0.4s (no fade — slide only); uses `pointer-events: none` when closed
+  - Panel is `position: fixed; top: 12.5vh; bottom: 0; right: 0; width: 380px` — stretches from ~12.5% down to screen bottom
+  - Assistant messages use a typewriter effect: `parseSegments()` splits text into plain-text and link segments; links pop in as full `<a>` tags the instant they're reached; plain text types character by character at adaptive speed (`Math.max(5, Math.min(22, 2800 / text.length))` ms/char); `**bold**` stripped before typing
+  - `renderMessage()` converts `**text**` → `<strong>`, `\n` → `<br>`, and `[text](url)` → `<a target="_blank" style="color:#7dffaa">` — applied to user messages and final snap for any non-typed content
 
 ## Architecture
 
@@ -61,6 +67,7 @@ The Next.js app is not accessed directly by users — it runs as a backend servi
 
 - **Structured:** Parses `maxPrice`, `minBeds`, city mentions, and floor plan features via regex, then queries structured filters against all relevant tables. IDXPlus listings are always queried first. `parseMinBeds` normalises written-out numbers ("three" → 3) before applying digit regex, so "at least three bedrooms" works the same as "at least 3 bedrooms".
 - **Keyword LIKE:** Extracts content keywords (stop words removed) and runs `LOWER(col) LIKE '%kw%'` against FAQs, communities, and floor plans. Only runs when no structured filters were detected. `'ken'` and `'harvey'` are in the stop words list — they are builder-name words, not content keywords, and would otherwise false-match community/city names like "Kenlan Farms" or "Kenly".
+- **Browse defaults (no filters):** Generic browse queries default to higher-end to match the system prompt bias — floor plans filter `MaxSquareFeet >= 2500` ordered largest first; communities filter `MinPrice >= 500000` ordered most expensive first; listings filter `Price >= 500000` ordered most expensive first. Structured queries (with explicit user filters) are unaffected.
 
 ## Databases
 
@@ -94,7 +101,13 @@ Source for **communities, floor plans, and FAQs**.
 - Shared client in `src/lib/claude.js` (exported as `client`).
 - Model: `claude-sonnet-4-6`.
 - Web search: server-side tool `{ type: 'web_search_20260209', name: 'web_search' }`. Claude executes automatically — no client-side tool loop needed. Handle `stop_reason === 'pause_turn'` by re-sending with the assistant turn appended.
-- System prompt identifies Claude as "the AI assistant for Ken Harvey Homes". Format rules prohibit tables, pipes, horizontal rules, blockquotes, and emojis. Claude is instructed to format floor plans, communities, and listings as markdown links `[Name](url)` when a URL is present in the database context (marked as `URL: https://...`). The DNN widget's `renderMessage()` renders these as clickable `<a target="_blank">` tags.
+- System prompt identifies Claude as "the AI assistant for Ken Harvey Homes". Key format rules:
+  - Never mention databases, systems, or data infrastructure ("our database", "our system", "not populated", etc.) — speak naturally
+  - When a user asks broadly without specifying price/size, default to higher-end offerings: floor plans 2,500+ sq ft, communities and homes $500,000+
+  - Format floor plans, communities, and listings as markdown links `[Name](url)` when a URL is in the context (marked as `URL: https://...`)
+  - School questions: use web search for driving-distance results; always append disclaimer that school district assignments are subject to change and non-public options may exist
+  - Floor plan pricing: explain it varies by community/lot/options; never say pricing isn't in the database
+  - Prohibit tables, pipes, horizontal rules, blockquotes, emojis
 
 ## URL Patterns (kenharveyhomes.com)
 
